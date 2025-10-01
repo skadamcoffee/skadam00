@@ -371,7 +371,7 @@ export default function AdminPromoCodesScreen() {
                         <Calendar color={expired ? Colors.error : Colors.textSecondary} size={16} />
                         <Text style={[
                           styles.detailText,
-                          expired && styles.expiredText
+                          expired ? styles.expiredText : undefined
                         ]}>
                           {expired ? 'Expired' : 'Expires'}: {new Date(promoCode.expiresAt).toLocaleDateString()}
                         </Text>
