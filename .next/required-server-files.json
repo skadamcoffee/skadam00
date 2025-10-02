@@ -10,7 +10,7 @@
       "ignoreBuildErrors": false,
       "tsconfigPath": "tsconfig.json"
     },
-    "typedRoutes": false,
+    "typedRoutes": true,
     "distDir": ".next",
     "cleanDistDir": true,
     "assetPrefix": "",
@@ -204,6 +204,7 @@
       "devtoolSegmentExplorer": true,
       "browserDebugInfoInTerminal": false,
       "optimizeRouterScrolling": false,
+      "typedRoutes": true,
       "optimizePackageImports": [
         "lucide-react",
         "date-fns",

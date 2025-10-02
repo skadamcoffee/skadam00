@@ -1,7 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',      // enables static HTML export
-  distDir: 'out',  // folder for the exported files
+  output: "export", // this tells Next.js to generate a static export
+  experimental: {
+    typedRoutes: true // keep this if you use Expo Router
+  },
 };
 
 module.exports = nextConfig;
