@@ -3,11 +3,13 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "dev": "next dev",
-    "start": "next start",
-    "build": "next build",
-    "lint": "expo lint"
-  },
+  "start": "expo start",
+  "android": "expo start --android",
+  "ios": "expo start --ios",
+  "web": "expo start --web",
+  "build:web": "expo export --platform web",
+  "lint": "expo lint"
+},
   "dependencies": {
     "@expo/vector-icons": "^14.1.0",
     "@nkzw/create-context-hook": "^1.1.0",
