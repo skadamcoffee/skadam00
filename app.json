@@ -20,10 +20,7 @@
         "NSPhotoLibraryUsageDescription": "Allow $(PRODUCT_NAME) to access your photos",
         "NSCameraUsageDescription": "Allow $(PRODUCT_NAME) to access your camera",
         "NSMicrophoneUsageDescription": "Allow $(PRODUCT_NAME) to access your microphone",
-        "UIBackgroundModes": [
-          "audio",
-          "audio"
-        ]
+        "UIBackgroundModes": ["audio", "audio"]
       }
     },
     "android": {
@@ -33,14 +30,6 @@
       },
       "package": "app.skadam.skadamcoffeemenu",
       "permissions": [
-        "android.permission.RECEIVE_BOOT_COMPLETED",
-        "android.permission.SCHEDULE_EXACT_ALARM",
-        "android.permission.CAMERA",
-        "android.permission.READ_EXTERNAL_STORAGE",
-        "android.permission.WRITE_EXTERNAL_STORAGE",
-        "android.permission.VIBRATE",
-        "android.permission.RECORD_AUDIO",
-        "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.SCHEDULE_EXACT_ALARM",
         "android.permission.CAMERA",
@@ -67,9 +56,7 @@
           "icon": "./local/assets/notification_icon.png",
           "color": "#ffffff",
           "defaultChannel": "default",
-          "sounds": [
-            "./local/assets/notification_sound.wav"
-          ],
+          "sounds": ["./local/assets/notification_sound.wav"],
           "enableBackgroundRemoteNotifications": false
         }
       ],
@@ -90,6 +77,8 @@
       "typedRoutes": true
     },
     "extra": {
+      "EXPO_PUBLIC_SUPABASE_URL": "https://oplwqtpipcevwgpgujge.supabase.co",
+      "EXPO_PUBLIC_SUPABASE_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9wbHdxdHBpcGNldndncGd1amdlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTk0MTAxMDksImV4cCI6MjA3NDk4NjEwOX0.BJefB4YEqKNhVJnBrSCiyV_-kUhPCTXcZJmHGQGI1vA",
       "router": {
         "origin": "https://rork.com/"
       },
