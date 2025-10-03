@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
-import { supabase } from '../lib/supabaseClient'; // Path must be correct!
+import { supabase } from './lib/supabaseClient'; // Path must be correct!
 import { Alert } from 'react-native';
 
 // --- INTERFACE DEFINITIONS ---
