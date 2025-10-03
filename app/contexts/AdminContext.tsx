@@ -1,587 +1,621 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import createContextHook from '@nkzw/create-context-hook';
-import { MenuItem, Category, menuItems as defaultMenuItems, categories as defaultCategories } from '@/data/menuItems';
+import { supabase } from '../lib/supabaseClient'; // Path must be correct!
+import { Alert } from 'react-native';
+
+// --- INTERFACE DEFINITIONS ---
+
+export interface MenuItem {
+    id: string;
+    name: string;
+    description: string;
+    price: string;
+    category_id: string;
+    image: string; // Maps to image_url in DB
+    is_popular: boolean;
+    is_available: boolean;
+    inventory?: { // Stored as JSONB in DB
+        quantity: number;
+        alertThreshold: number;
+        alertEnabled: boolean;
+        unit: string;
+    };
+}
+
+export interface Category {
+    id: string;
+    name: string;
+    description: string;
+    image: string; // Maps to image_url in DB
+    color: string;
+}
 
 export interface OrderItem {
-  id: string;
-  name: string;
-  price: string;
-  quantity: number;
-  image: string;
+    id: string;
+    name: string;
+    price: string;
+    quantity: number;
+    image: string;
 }
 
 export interface Order {
-  id: string;
-  items: OrderItem[];
-  total: string;
-  status: 'pending' | 'preparing' | 'ready' | 'completed' | 'paid';
-  customerNote?: string;
-  timestamp: number;
-  orderNumber: number;
-  paidAt?: number;
-  tableNumber: number;
+    id: string;
+    items: OrderItem[];
+    total: string;
+    status: 'pending' | 'preparing' | 'ready' | 'completed' | 'paid';
+    customerNote?: string;
+    timestamp: number;
+    orderNumber: number;
+    paidAt?: number;
+    tableNumber: number;
 }
 
 export interface SubUser {
-  id: string;
-  username: string;
-  password: string;
-  name: string;
-  permissions: 'orders_only';
-  createdAt: number;
-  isActive: boolean;
+    id: string;
+    username: string;
+    password?: string;
+    name: string;
+    permissions: 'orders_only';
+    createdAt: number;
+    isActive: boolean;
 }
 
 export interface SocialMediaLink {
-  id: string;
-  platform: 'instagram' | 'facebook' | 'tiktok';
-  url: string;
-  isActive: boolean;
+    id: string;
+    platform: 'instagram' | 'facebook' | 'tiktok';
+    url: string;
+    isActive: boolean;
 }
 
 export interface OpeningHours {
-  day: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
-  isOpen: boolean;
-  openTime: string;
-  closeTime: string;
+    day: 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
+    isOpen: boolean;
+    openTime: string;
+    closeTime: string;
 }
 
 export interface StoreSettings {
-  socialMediaLinks: SocialMediaLink[];
-  openingHours: OpeningHours[];
-  storeDescription: string;
+    socialMediaLinks: SocialMediaLink[];
+    openingHours: OpeningHours[];
+    storeDescription: string;
 }
 
 export type UserType = 'admin' | 'sub_user';
 
 export interface AuthUser {
-  type: UserType;
-  id?: string;
-  username?: string;
-  name?: string;
+    type: UserType;
+    id?: string;
+    username?: string;
+    name?: string;
 }
 
 interface AdminContextType {
-  menuItems: MenuItem[];
-  categories: Category[];
-  orders: Order[];
-  subUsers: SubUser[];
-  storeSettings: StoreSettings;
-  currentUser: AuthUser | null;
-  addMenuItem: (item: Omit<MenuItem, 'id'>) => void;
-  updateMenuItem: (id: string, item: Partial<MenuItem>) => void;
-  deleteMenuItem: (id: string) => void;
-  addCategory: (category: Omit<Category, 'id'>) => void;
-  updateCategory: (id: string, category: Partial<Category>) => void;
-  deleteCategory: (id: string) => void;
-  addOrder: (items: OrderItem[], tableNumber: number, customerNote?: string) => Promise<{ orderId: string; orderNumber: number }>;
-  getOrderById: (orderId: string) => Order | undefined;
-  updateOrderStatus: (orderId: string, status: Order['status']) => void;
-  deleteOrder: (orderId: string) => void;
-  clearPaidOrders: () => Promise<void>;
-  updateInventory: (itemId: string, quantity: number) => void;
-  updateInventorySettings: (itemId: string, settings: { alertThreshold?: number; alertEnabled: boolean; unit?: string }) => void;
-  getLowStockItems: () => MenuItem[];
-  addSubUser: (subUser: Omit<SubUser, 'id' | 'createdAt'>) => void;
-  updateSubUser: (id: string, updates: Partial<SubUser>) => void;
-  deleteSubUser: (id: string) => void;
-  updateStoreSettings: (settings: Partial<StoreSettings>) => void;
-  addSocialMediaLink: (link: Omit<SocialMediaLink, 'id'>) => void;
-  updateSocialMediaLink: (id: string, updates: Partial<SocialMediaLink>) => void;
-  deleteSocialMediaLink: (id: string) => void;
-  updateOpeningHours: (hours: OpeningHours[]) => void;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-  login: (password: string, username?: string) => Promise<boolean>;
-  logout: () => void;
+    // ... (All context properties remain the same) ...
+    menuItems: MenuItem[];
+    categories: Category[];
+    orders: Order[];
+    subUsers: SubUser[];
+    storeSettings: StoreSettings;
+    currentUser: AuthUser | null;
+    addMenuItem: (item: Omit<MenuItem, 'id'>) => Promise<void>;
+    updateMenuItem: (id: string, item: Partial<MenuItem>) => Promise<void>;
+    deleteMenuItem: (id: string) => Promise<void>;
+    addCategory: (category: Omit<Category, 'id'>) => Promise<void>;
+    updateCategory: (id: string, category: Partial<Category>) => Promise<void>;
+    deleteCategory: (id: string) => Promise<void>;
+    addOrder: (items: OrderItem[], tableNumber: number, customerNote?: string) => Promise<{ orderId: string; orderNumber: number }>;
+    getOrderById: (orderId: string) => Order | undefined;
+    updateOrderStatus: (orderId: string, status: Order['status']) => Promise<void>;
+    deleteOrder: (orderId: string) => Promise<void>;
+    clearPaidOrders: () => Promise<void>;
+    updateInventory: (itemId: string, quantity: number) => Promise<void>;
+    updateInventorySettings: (itemId: string, settings: { alertThreshold?: number; alertEnabled: boolean; unit?: string }) => Promise<void>;
+    getLowStockItems: () => MenuItem[];
+    addSubUser: (subUser: Omit<SubUser, 'id' | 'createdAt'>) => Promise<void>;
+    updateSubUser: (id: string, updates: Partial<SubUser>) => Promise<void>;
+    deleteSubUser: (id: string) => Promise<void>;
+    updateStoreSettings: (settings: Partial<StoreSettings>) => Promise<void>;
+    addSocialMediaLink: (link: Omit<SocialMediaLink, 'id'>) => Promise<void>;
+    updateSocialMediaLink: (id: string, updates: Partial<SocialMediaLink>) => Promise<void>;
+    deleteSocialMediaLink: (id: string) => Promise<void>;
+    updateOpeningHours: (hours: OpeningHours[]) => Promise<void>;
+    isLoading: boolean;
+    isAuthenticated: boolean;
+    login: (password: string, username?: string) => Promise<boolean>;
+    logout: () => void;
 }
 
-const MENU_ITEMS_KEY = 'skadam_menu_items';
-const CATEGORIES_KEY = 'skadam_categories';
-const ORDERS_KEY = 'skadam_orders';
-const ORDER_COUNTER_KEY = 'skadam_order_counter';
+// --- CONSTANTS ---
 const AUTH_KEY = 'skadam_admin_auth';
-const SUB_USERS_KEY = 'skadam_sub_users';
-const STORE_SETTINGS_KEY = 'skadam_store_settings';
 const ADMIN_PASSWORD = 'skadam2024';
 
 const defaultStoreSettings: StoreSettings = {
-  socialMediaLinks: [],
-  openingHours: [
-    { day: 'monday', isOpen: true, openTime: '08:00', closeTime: '18:00' },
-    { day: 'tuesday', isOpen: true, openTime: '08:00', closeTime: '18:00' },
-    { day: 'wednesday', isOpen: true, openTime: '08:00', closeTime: '18:00' },
-    { day: 'thursday', isOpen: true, openTime: '08:00', closeTime: '18:00' },
-    { day: 'friday', isOpen: true, openTime: '08:00', closeTime: '18:00' },
-    { day: 'saturday', isOpen: true, openTime: '09:00', closeTime: '17:00' },
-    { day: 'sunday', isOpen: false, openTime: '09:00', closeTime: '17:00' }
-  ],
-  storeDescription: 'Fresh • Local • Artisan'
+    socialMediaLinks: [],
+    openingHours: [],
+    storeDescription: 'Fresh • Local • Artisan'
 };
 
+
 export const [AdminProvider, useAdmin] = createContextHook<AdminContextType>(() => {
-  const [menuItems, setMenuItems] = useState<MenuItem[]>(defaultMenuItems);
-  const [categories, setCategories] = useState<Category[]>(defaultCategories);
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [subUsers, setSubUsers] = useState<SubUser[]>([]);
-  const [storeSettings, setStoreSettings] = useState<StoreSettings>(defaultStoreSettings);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+    const [menuItems, setMenuItems] = useState<MenuItem[]>([]);
+    const [categories, setCategories] = useState<Category[]>([]);
+    const [orders, setOrders] = useState<Order[]>([]);
+    const [subUsers, setSubUsers] = useState<SubUser[]>([]);
+    const [storeSettings, setStoreSettings] = useState<StoreSettings>(defaultStoreSettings);
+    const [isLoading, setIsLoading] = useState<boolean>(true);
+    const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+    const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
 
-  useEffect(() => {
-    loadData();
-    checkAuthStatus();
-  }, []);
+    // --- RPC Helper ---
 
-  const loadData = async () => {
-    try {
-      const [storedMenuItems, storedCategories, storedOrders, storedSubUsers, storedStoreSettings] = await Promise.all([
-        AsyncStorage.getItem(MENU_ITEMS_KEY),
-        AsyncStorage.getItem(CATEGORIES_KEY),
-        AsyncStorage.getItem(ORDERS_KEY),
-        AsyncStorage.getItem(SUB_USERS_KEY),
-        AsyncStorage.getItem(STORE_SETTINGS_KEY)
-      ]);
-
-      if (storedMenuItems) {
-        setMenuItems(JSON.parse(storedMenuItems));
-      }
-      if (storedCategories) {
-        setCategories(JSON.parse(storedCategories));
-      }
-      if (storedOrders) {
-        setOrders(JSON.parse(storedOrders));
-      }
-      if (storedSubUsers) {
-        setSubUsers(JSON.parse(storedSubUsers));
-      }
-      if (storedStoreSettings) {
-        setStoreSettings(JSON.parse(storedStoreSettings));
-      }
-    } catch (error) {
-      console.error('Error loading data:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const checkAuthStatus = async () => {
-    try {
-      const authStatus = await AsyncStorage.getItem(AUTH_KEY);
-      if (authStatus) {
-        const { isAuth, timestamp, user } = JSON.parse(authStatus);
-        const now = Date.now();
-        const oneHour = 60 * 60 * 1000;
-        
-        if (isAuth && (now - timestamp) < oneHour) {
-          setIsAuthenticated(true);
-          setCurrentUser(user || { type: 'admin' });
-        } else {
-          await AsyncStorage.removeItem(AUTH_KEY);
-          setIsAuthenticated(false);
-          setCurrentUser(null);
+    const getNextOrderNumber = useCallback(async (): Promise<number> => {
+        const { data, error } = await supabase.rpc('get_next_order_number');
+        if (error) {
+            console.error('Order number RPC Error:', error);
+            // Fallback to a random number, but a proper solution requires a DB connection.
+            return Date.now() % 10000; 
         }
-      }
-    } catch (error) {
-      console.error('Error checking auth status:', error);
-      setIsAuthenticated(false);
-      setCurrentUser(null);
-    }
-  };
+        return data as number;
+    }, []);
 
-  const login = useCallback(async (password: string, username?: string): Promise<boolean> => {
-    // Admin login
-    if (!username && password === ADMIN_PASSWORD) {
-      const user: AuthUser = { type: 'admin' };
-      const authData = {
-        isAuth: true,
-        timestamp: Date.now(),
-        user
-      };
-      await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(authData));
-      setIsAuthenticated(true);
-      setCurrentUser(user);
-      return true;
-    }
-    
-    // Sub-user login
-    if (username) {
-      const subUser = subUsers.find(u => u.username === username && u.password === password && u.isActive);
-      if (subUser) {
-        const user: AuthUser = {
-          type: 'sub_user',
-          id: subUser.id,
-          username: subUser.username,
-          name: subUser.name
-        };
-        const authData = {
-          isAuth: true,
-          timestamp: Date.now(),
-          user
-        };
-        await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(authData));
-        setIsAuthenticated(true);
-        setCurrentUser(user);
-        return true;
-      }
-    }
-    
-    return false;
-  }, [subUsers]);
+    // --- 1. DATA FETCHING (Supabase Read Operations) ---
 
-  const logout = useCallback(async () => {
-    await AsyncStorage.removeItem(AUTH_KEY);
-    setIsAuthenticated(false);
-    setCurrentUser(null);
-  }, []);
+    const fetchCategories = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('categories')
+            .select('id, name, description, image_url, color, sort_order')
+            .order('sort_order', { ascending: true });
 
-  const saveMenuItems = useCallback(async (items: MenuItem[]) => {
-    if (!items || !Array.isArray(items)) return;
-    try {
-      await AsyncStorage.setItem(MENU_ITEMS_KEY, JSON.stringify(items));
-    } catch (error) {
-      console.error('Error saving menu items:', error);
-    }
-  }, []);
+        if (error) throw error;
 
-  const saveCategories = useCallback(async (cats: Category[]) => {
-    if (!cats || !Array.isArray(cats)) return;
-    try {
-      await AsyncStorage.setItem(CATEGORIES_KEY, JSON.stringify(cats));
-    } catch (error) {
-      console.error('Error saving categories:', error);
-    }
-  }, []);
+        const mappedCategories = data.map(cat => ({
+            id: cat.id.toString(),
+            name: cat.name,
+            description: cat.description,
+            image: cat.image_url,
+            color: cat.color || '#333',
+        })) as Category[];
+        setCategories(mappedCategories);
+    }, []);
 
-  const saveOrders = useCallback(async (orderList: Order[]) => {
-    if (!orderList || !Array.isArray(orderList)) return;
-    try {
-      await AsyncStorage.setItem(ORDERS_KEY, JSON.stringify(orderList));
-    } catch (error) {
-      console.error('Error saving orders:', error);
-    }
-  }, []);
+    const fetchMenuItems = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('menu_items')
+            .select('*');
 
-  const getNextOrderNumber = useCallback(async (): Promise<number> => {
-    try {
-      const counterStr = await AsyncStorage.getItem(ORDER_COUNTER_KEY);
-      const counter = counterStr ? parseInt(counterStr, 10) : 0;
-      const nextCounter = counter + 1;
-      await AsyncStorage.setItem(ORDER_COUNTER_KEY, nextCounter.toString());
-      return nextCounter;
-    } catch (error) {
-      console.error('Error getting order number:', error);
-      return Date.now() % 10000;
-    }
-  }, []);
+        if (error) throw error;
+        setMenuItems(data as MenuItem[]);
+    }, []);
 
-  const addMenuItem = useCallback((item: Omit<MenuItem, 'id'>) => {
-    const newItem: MenuItem = {
-      ...item,
-      id: Date.now().toString()
-    };
-    const updatedItems = [...menuItems, newItem];
-    setMenuItems(updatedItems);
-    saveMenuItems(updatedItems);
-  }, [menuItems, saveMenuItems]);
+    const fetchOrders = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('orders')
+            .neq('status', 'paid')
+            .order('timestamp', { ascending: false });
 
-  const updateMenuItem = useCallback((id: string, updates: Partial<MenuItem>) => {
-    const updatedItems = menuItems.map(item => 
-      item.id === id ? { ...item, ...updates } : item
-    );
-    setMenuItems(updatedItems);
-    saveMenuItems(updatedItems);
-  }, [menuItems, saveMenuItems]);
+        if (error) throw error;
+        setOrders(data as Order[]);
+    }, []);
 
-  const deleteMenuItem = useCallback((id: string) => {
-    const updatedItems = menuItems.filter(item => item.id !== id);
-    setMenuItems(updatedItems);
-    saveMenuItems(updatedItems);
-  }, [menuItems, saveMenuItems]);
+    const fetchSubUsers = useCallback(async () => {
+        const { data, error } = await supabase
+            .from('sub_users')
+            .select('id, username, name, permissions, created_at, is_active');
 
-  const addCategory = useCallback((category: Omit<Category, 'id'>) => {
-    const newCategory: Category = {
-      ...category,
-      id: Date.now().toString()
-    };
-    const updatedCategories = [...categories, newCategory];
-    setCategories(updatedCategories);
-    saveCategories(updatedCategories);
-  }, [categories, saveCategories]);
+        if (error) throw error;
+        setSubUsers(data as SubUser[]);
+    }, []);
 
-  const updateCategory = useCallback((id: string, updates: Partial<Category>) => {
-    const updatedCategories = categories.map(category => 
-      category.id === id ? { ...category, ...updates } : category
-    );
-    setCategories(updatedCategories);
-    saveCategories(updatedCategories);
-  }, [categories, saveCategories]);
+    const fetchStoreSettings = useCallback(async () => {
+        const [social, hours, desc] = await Promise.all([
+            supabase.from('social_media').select('*'),
+            supabase.from('opening_hours').select('*'),
+            supabase.from('store_details').select('store_description').eq('id', 1).single(),
+        ]);
 
-  const deleteCategory = useCallback((id: string) => {
-    const updatedCategories = categories.filter(category => category.id !== id);
-    setCategories(updatedCategories);
-    saveCategories(updatedCategories);
-  }, [categories, saveCategories]);
-
-  const addOrder = useCallback(async (items: OrderItem[], tableNumber: number, customerNote?: string): Promise<{ orderId: string; orderNumber: number }> => {
-    const orderNumber = await getNextOrderNumber();
-    const total = items.reduce((sum, item) => {
-      const price = parseFloat(item.price.replace(' TND', ''));
-      return sum + (price * item.quantity);
-    }, 0).toFixed(2);
-
-    const newOrder: Order = {
-      id: Date.now().toString(),
-      items,
-      total: `${total} TND`,
-      status: 'pending',
-      customerNote,
-      timestamp: Date.now(),
-      orderNumber,
-      tableNumber
-    };
-
-    // Update inventory quantities when order is placed
-    const updatedMenuItems = menuItems.map(menuItem => {
-      const orderedItem = items.find(item => item.id === menuItem.id);
-      if (orderedItem && menuItem.inventory) {
-        return {
-          ...menuItem,
-          inventory: {
-            ...menuItem.inventory,
-            quantity: Math.max(0, menuItem.inventory.quantity - orderedItem.quantity)
-          }
-        };
-      }
-      return menuItem;
-    });
-    
-    const updatedOrders = [newOrder, ...orders];
-    
-    // Update state first and ensure it's synchronous
-    setOrders(updatedOrders);
-    setMenuItems(updatedMenuItems);
-    
-    // Save to storage in background (don't wait for it)
-    Promise.all([
-      saveOrders(updatedOrders),
-      saveMenuItems(updatedMenuItems)
-    ]).then(() => {
-      console.log('New order created and saved:', newOrder.orderNumber, 'for table', newOrder.tableNumber);
-    }).catch((error) => {
-      console.error('Error saving order:', error);
-    });
-    
-    // Return both the order ID and order number immediately
-    return { orderId: newOrder.id, orderNumber: newOrder.orderNumber };
-  }, [orders, menuItems, saveOrders, saveMenuItems, getNextOrderNumber]);
-
-  const updateOrderStatus = useCallback((orderId: string, status: Order['status']) => {
-    const updatedOrders = orders.map(order => {
-      if (order.id === orderId) {
-        const updatedOrder = { ...order, status };
-        if (status === 'paid') {
-          updatedOrder.paidAt = Date.now();
+        if (social.error || hours.error || desc.error) {
+            console.error('Settings load error:', social.error || hours.error || desc.error);
+            return;
         }
-        return updatedOrder;
-      }
-      return order;
-    });
-    setOrders(updatedOrders);
-    saveOrders(updatedOrders);
-    
-    // Trigger notification when order is ready
-    if (status === 'ready') {
-      const order = orders.find(o => o.id === orderId);
-      if (order) {
-        // This will be handled by the notification context
-        console.log(`Order #${order.orderNumber} for Table ${order.tableNumber} is ready`);
-      }
-    }
-  }, [orders, saveOrders]);
 
-  const deleteOrder = useCallback((orderId: string) => {
-    const updatedOrders = orders.filter(order => order.id !== orderId);
-    setOrders(updatedOrders);
-    saveOrders(updatedOrders);
-  }, [orders, saveOrders]);
+        setStoreSettings({
+            socialMediaLinks: social.data as SocialMediaLink[],
+            openingHours: hours.data as OpeningHours[],
+            storeDescription: desc.data?.store_description || defaultStoreSettings.storeDescription,
+        });
+    }, []);
 
-  const clearPaidOrders = useCallback(async () => {
-    const unpaidOrders = orders.filter(order => order.status !== 'paid');
-    setOrders(unpaidOrders);
-    await saveOrders(unpaidOrders);
-    
-    // Reset order counter to 0 when clearing paid orders
-    await AsyncStorage.setItem(ORDER_COUNTER_KEY, '0');
-    
-    console.log('Cleared all paid orders from the system and reset order counter to 0');
-  }, [orders, saveOrders]);
 
-  const updateInventory = useCallback((itemId: string, quantity: number) => {
-    const updatedItems = menuItems.map(item => {
-      if (item.id === itemId) {
-        return {
-          ...item,
-          inventory: {
-            ...item.inventory,
+    const loadData = async () => {
+        setIsLoading(true);
+        try {
+            await Promise.all([
+                fetchCategories(),
+                fetchMenuItems(),
+                fetchOrders(),
+                fetchSubUsers(),
+                fetchStoreSettings(),
+            ]);
+        } catch (error: any) {
+            console.error('Global data load error:', error.message);
+            Alert.alert('Server Error', 'Could not fetch data. Please check connection.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+
+    // --- 2. INITIALIZATION AND REALTIME ---
+
+    const checkAuthStatus = useCallback(async () => {
+        // Keeping local auth check logic
+        try {
+            const authStatus = await AsyncStorage.getItem(AUTH_KEY);
+            if (authStatus) {
+                const { isAuth, timestamp, user } = JSON.parse(authStatus);
+                const now = Date.now();
+                const oneHour = 60 * 60 * 1000;
+
+                if (isAuth && (now - timestamp) < oneHour) {
+                    setIsAuthenticated(true);
+                    setCurrentUser(user || { type: 'admin' });
+                } else {
+                    await AsyncStorage.removeItem(AUTH_KEY);
+                    setIsAuthenticated(false);
+                    setCurrentUser(null);
+                }
+            }
+        } catch (error) {
+            console.error('Error checking auth status:', error);
+            setIsAuthenticated(false);
+            setCurrentUser(null);
+        }
+    }, []);
+
+    useEffect(() => {
+        loadData();
+        checkAuthStatus();
+
+        // Set up Realtime Subscription for Orders
+        const orderChannel = supabase
+            .channel('public:orders')
+            .on('postgres_changes',
+                { event: 'INSERT', schema: 'public', table: 'orders' },
+                (payload) => {
+                    setOrders(prevOrders => [payload.new as Order, ...prevOrders]);
+                    Alert.alert("NEW ORDER", `Order #${(payload.new as Order).orderNumber} placed.`);
+                }
+            )
+            .on('postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'orders' },
+                (payload) => {
+                    setOrders(prevOrders => prevOrders.map(order =>
+                        order.id === payload.new.id ? payload.new as Order : order
+                    ));
+                }
+            )
+            .on('postgres_changes',
+                { event: 'DELETE', schema: 'public', table: 'orders' },
+                (payload) => {
+                    setOrders(prevOrders => prevOrders.filter(order => order.id !== payload.old.id));
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(orderChannel);
+        };
+    }, [loadData, checkAuthStatus]);
+
+
+    // --- 3. AUTHENTICATION ---
+
+    const login = useCallback(async (password: string, username?: string): Promise<boolean> => {
+        // Admin login
+        if (!username && password === ADMIN_PASSWORD) {
+            const user: AuthUser = { type: 'admin' };
+            const authData = { isAuth: true, timestamp: Date.now(), user };
+            await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+            setIsAuthenticated(true);
+            setCurrentUser(user);
+            return true;
+        }
+
+        // Sub-user login
+        if (username) {
+            // Find user in local state (fetched from DB)
+            const subUser = subUsers.find(u => u.username === username && u.password === password && u.isActive);
+            if (subUser) {
+                const user: AuthUser = { type: 'sub_user', id: subUser.id, username: subUser.username, name: subUser.name };
+                const authData = { isAuth: true, timestamp: Date.now(), user };
+                await AsyncStorage.setItem(AUTH_KEY, JSON.stringify(authData));
+                setIsAuthenticated(true);
+                setCurrentUser(user);
+                return true;
+            }
+        }
+
+        return false;
+    }, [subUsers]);
+
+    const logout = useCallback(async () => {
+        await AsyncStorage.removeItem(AUTH_KEY);
+        // Supabase sign out goes here if using Supabase Auth
+        setIsAuthenticated(false);
+        setCurrentUser(null);
+    }, []);
+
+
+    // --- 4. CRUD OPERATIONS ---
+
+    // MENU ITEMS
+    const updateInventory = useCallback(async (itemId: string, quantity: number) => {
+        // Find current inventory to merge updates
+        const currentItem = menuItems.find(item => item.id === itemId);
+        const updatedInventory = {
+            ...currentItem?.inventory,
             quantity: Math.max(0, quantity),
-            alertThreshold: item.inventory?.alertThreshold || 5,
-            alertEnabled: item.inventory?.alertEnabled || false,
-            unit: item.inventory?.unit || 'units'
-          }
         };
-      }
-      return item;
-    });
-    setMenuItems(updatedItems);
-    saveMenuItems(updatedItems);
-  }, [menuItems, saveMenuItems]);
 
-  const updateInventorySettings = useCallback((itemId: string, settings: { alertThreshold?: number; alertEnabled: boolean; unit?: string }) => {
-    const updatedItems = menuItems.map(item => {
-      if (item.id === itemId) {
-        return {
-          ...item,
-          inventory: {
-            quantity: item.inventory?.quantity || 0,
-            alertThreshold: settings.alertThreshold ?? item.inventory?.alertThreshold ?? 5,
-            alertEnabled: settings.alertEnabled,
-            unit: settings.unit || item.inventory?.unit || 'units'
-          }
+        const { error } = await supabase
+            .from('menu_items')
+            .update({ inventory: updatedInventory })
+            .eq('id', itemId);
+
+        if (error) { Alert.alert('Error', `Failed to update inventory: ${error.message}`); return; }
+
+        setMenuItems(prevItems => prevItems.map(item => item.id === itemId ? { ...item, inventory: updatedInventory } : item));
+    }, [menuItems]);
+
+    const addMenuItem = useCallback(async (item: Omit<MenuItem, 'id'>) => {
+        const { data: newItem, error } = await supabase
+            .from('menu_items')
+            .insert([{ ...item, id: undefined, image_url: item.image, inventory: item.inventory || {} }])
+            .select()
+            .single();
+
+        if (error) { Alert.alert('Error', `Failed to add item: ${error.message}`); return; }
+        setMenuItems(prevItems => [...prevItems, newItem as MenuItem]);
+    }, []);
+
+    const updateMenuItem = useCallback(async (id: string, updates: Partial<MenuItem>) => {
+        const dbUpdates: Partial<MenuItem & { image_url?: string }> = { ...updates };
+        if (updates.image) {
+            dbUpdates.image_url = updates.image;
+            delete dbUpdates.image;
+        }
+
+        const { error } = await supabase.from('menu_items').update(dbUpdates).eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to update item: ${error.message}`); return; }
+        setMenuItems(prevItems => prevItems.map(item => item.id === id ? { ...item, ...updates } : item));
+    }, []);
+
+    const deleteMenuItem = useCallback(async (id: string) => {
+        const { error } = await supabase.from('menu_items').delete().eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to delete item: ${error.message}`); return; }
+        setMenuItems(prevItems => prevItems.filter(item => item.id !== id));
+    }, []);
+
+    // CATEGORIES
+    const addCategory = useCallback(async (category: Omit<Category, 'id'>) => {
+        const { data: newCategory, error } = await supabase
+            .from('categories')
+            .insert([{ ...category, id: undefined, image_url: category.image }])
+            .select()
+            .single();
+
+        if (error) { Alert.alert('Error', `Failed to add category: ${error.message}`); return; }
+        setCategories(prevCats => [...prevCats, { ...newCategory, image: newCategory.image_url } as Category]);
+    }, []);
+
+    const updateCategory = useCallback(async (id: string, updates: Partial<Category>) => {
+        const dbUpdates: Partial<Category & { image_url?: string }> = { ...updates };
+        if (updates.image) {
+            dbUpdates.image_url = updates.image;
+            delete dbUpdates.image;
+        }
+
+        const { error } = await supabase.from('categories').update(dbUpdates).eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to update category: ${error.message}`); return; }
+        setCategories(prevCats => prevCats.map(cat => cat.id === id ? { ...cat, ...updates } : cat));
+    }, []);
+
+    const deleteCategory = useCallback(async (id: string) => {
+        const { error } = await supabase.from('categories').delete().eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to delete category: ${error.message}`); return; }
+        setCategories(prevCats => prevCats.filter(cat => cat.id !== id));
+    }, []);
+
+    // ORDERS
+    const addOrder = useCallback(async (items: OrderItem[], tableNumber: number, customerNote?: string): Promise<{ orderId: string; orderNumber: number }> => {
+        const orderNumber = await getNextOrderNumber();
+        const total = items.reduce((sum, item) => parseFloat(item.price.replace(' TND', '')) * item.quantity + sum, 0).toFixed(2);
+
+        const newOrderData = {
+            items: items, // JSONB column
+            total: `${total} TND`,
+            status: 'pending',
+            customer_note: customerNote,
+            order_number: orderNumber,
+            table_number: tableNumber,
+            timestamp: Date.now(),
         };
-      }
-      return item;
-    });
-    setMenuItems(updatedItems);
-    saveMenuItems(updatedItems);
-  }, [menuItems, saveMenuItems]);
 
-  const getLowStockItems = useCallback((): MenuItem[] => {
-    return menuItems.filter(item => {
-      if (!item.inventory || !item.inventory.alertEnabled) return false;
-      return item.inventory.quantity <= (item.inventory.alertThreshold || 0);
-    });
-  }, [menuItems]);
+        const { data: newOrder, error: orderError } = await supabase
+            .from('orders')
+            .insert([newOrderData])
+            .select()
+            .single();
 
-  const saveSubUsers = useCallback(async (users: SubUser[]) => {
-    if (!users || !Array.isArray(users)) return;
-    try {
-      await AsyncStorage.setItem(SUB_USERS_KEY, JSON.stringify(users));
-    } catch (error) {
-      console.error('Error saving sub users:', error);
-    }
-  }, []);
+        if (orderError) { Alert.alert('Error', `Failed to create order: ${orderError.message}`); throw new Error(orderError.message); }
 
-  const addSubUser = useCallback((subUser: Omit<SubUser, 'id' | 'createdAt'>) => {
-    const newSubUser: SubUser = {
-      ...subUser,
-      id: Date.now().toString(),
-      createdAt: Date.now()
-    };
-    const updatedSubUsers = [...subUsers, newSubUser];
-    setSubUsers(updatedSubUsers);
-    saveSubUsers(updatedSubUsers);
-  }, [subUsers, saveSubUsers]);
+        // Inventory deduction (Manual implementation)
+        const updates = items.map(item => ({
+            id: item.id,
+            // Calculate new quantity
+            quantity: menuItems.find(mi => mi.id === item.id)?.inventory?.quantity - item.quantity
+        }));
+        updates.forEach(update => updateInventory(update.id, update.quantity));
 
-  const updateSubUser = useCallback((id: string, updates: Partial<SubUser>) => {
-    const updatedSubUsers = subUsers.map(user => 
-      user.id === id ? { ...user, ...updates } : user
-    );
-    setSubUsers(updatedSubUsers);
-    saveSubUsers(updatedSubUsers);
-  }, [subUsers, saveSubUsers]);
+        // State update for orders is primarily handled by Realtime, but this gives immediate feedback
+        setOrders(prevOrders => [newOrder as Order, ...prevOrders]);
 
-  const deleteSubUser = useCallback((id: string) => {
-    const updatedSubUsers = subUsers.filter(user => user.id !== id);
-    setSubUsers(updatedSubUsers);
-    saveSubUsers(updatedSubUsers);
-  }, [subUsers, saveSubUsers]);
+        return { orderId: newOrder.id, orderNumber: newOrder.order_number };
+    }, [menuItems, getNextOrderNumber, updateInventory]); // updateInventory is required for inventory deduction
 
-  const saveStoreSettings = useCallback(async (settings: StoreSettings) => {
-    try {
-      await AsyncStorage.setItem(STORE_SETTINGS_KEY, JSON.stringify(settings));
-    } catch (error) {
-      console.error('Error saving store settings:', error);
-    }
-  }, []);
+    const updateOrderStatus = useCallback(async (orderId: string, status: Order['status']) => {
+        const updates = { status, paid_at: status === 'paid' ? Date.now() : undefined };
 
-  const updateStoreSettings = useCallback((updates: Partial<StoreSettings>) => {
-    const updatedSettings = { ...storeSettings, ...updates };
-    setStoreSettings(updatedSettings);
-    saveStoreSettings(updatedSettings);
-  }, [storeSettings, saveStoreSettings]);
+        const { error } = await supabase
+            .from('orders')
+            .update(updates)
+            .eq('id', orderId);
 
-  const addSocialMediaLink = useCallback((link: Omit<SocialMediaLink, 'id'>) => {
-    const newLink: SocialMediaLink = {
-      ...link,
-      id: Date.now().toString()
-    };
-    const updatedLinks = [...storeSettings.socialMediaLinks, newLink];
-    const updatedSettings = { ...storeSettings, socialMediaLinks: updatedLinks };
-    setStoreSettings(updatedSettings);
-    saveStoreSettings(updatedSettings);
-  }, [storeSettings, saveStoreSettings]);
+        if (error) { Alert.alert('Error', `Failed to update status: ${error.message}`); return; }
+        // State update handled by Realtime
+    }, []);
 
-  const updateSocialMediaLink = useCallback((id: string, updates: Partial<SocialMediaLink>) => {
-    const updatedLinks = storeSettings.socialMediaLinks.map(link => 
-      link.id === id ? { ...link, ...updates } : link
-    );
-    const updatedSettings = { ...storeSettings, socialMediaLinks: updatedLinks };
-    setStoreSettings(updatedSettings);
-    saveStoreSettings(updatedSettings);
-  }, [storeSettings, saveStoreSettings]);
+    const deleteOrder = useCallback(async (orderId: string) => {
+        const { error } = await supabase.from('orders').delete().eq('id', orderId);
+        if (error) { Alert.alert('Error', `Failed to delete order: ${error.message}`); return; }
+        // State update handled by Realtime
+    }, []);
 
-  const deleteSocialMediaLink = useCallback((id: string) => {
-    const updatedLinks = storeSettings.socialMediaLinks.filter(link => link.id !== id);
-    const updatedSettings = { ...storeSettings, socialMediaLinks: updatedLinks };
-    setStoreSettings(updatedSettings);
-    saveStoreSettings(updatedSettings);
-  }, [storeSettings, saveStoreSettings]);
+    const clearPaidOrders = useCallback(async () => {
+        // 1. Delete all orders marked as 'paid'
+        const { error: deleteError } = await supabase
+            .from('orders')
+            .delete()
+            .eq('status', 'paid');
 
-  const updateOpeningHours = useCallback((hours: OpeningHours[]) => {
-    const updatedSettings = { ...storeSettings, openingHours: hours };
-    setStoreSettings(updatedSettings);
-    saveStoreSettings(updatedSettings);
-  }, [storeSettings, saveStoreSettings]);
+        if (deleteError) { Alert.alert('Error', `Failed to clear paid orders: ${deleteError.message}`); return; }
 
-  const getOrderById = useCallback((orderId: string): Order | undefined => {
-    return orders.find(order => order.id === orderId);
-  }, [orders]);
+        // 2. Reset order counter via RPC
+        await supabase.rpc('reset_order_counter');
 
-  return useMemo(() => ({
-    menuItems,
-    categories,
-    orders,
-    subUsers,
-    storeSettings,
-    currentUser,
-    addMenuItem,
-    updateMenuItem,
-    deleteMenuItem,
-    addCategory,
-    updateCategory,
-    deleteCategory,
-    addOrder,
-    getOrderById,
-    updateOrderStatus,
-    deleteOrder,
-    clearPaidOrders,
-    updateInventory,
-    updateInventorySettings,
-    getLowStockItems,
-    addSubUser,
-    updateSubUser,
-    deleteSubUser,
-    updateStoreSettings,
-    addSocialMediaLink,
-    updateSocialMediaLink,
-    deleteSocialMediaLink,
-    updateOpeningHours,
-    isLoading,
-    isAuthenticated,
-    login,
-    logout
-  }), [menuItems, categories, orders, subUsers, storeSettings, currentUser, addMenuItem, updateMenuItem, deleteMenuItem, addCategory, updateCategory, deleteCategory, addOrder, getOrderById, updateOrderStatus, deleteOrder, clearPaidOrders, updateInventory, updateInventorySettings, getLowStockItems, addSubUser, updateSubUser, deleteSubUser, updateStoreSettings, addSocialMediaLink, updateSocialMediaLink, deleteSocialMediaLink, updateOpeningHours, isLoading, isAuthenticated, login, logout]);
+        // 3. Manually update state
+        setOrders(prevOrders => prevOrders.filter(order => order.status !== 'paid'));
+    }, []);
+
+    // INVENTORY SETTINGS
+    const updateInventorySettings = useCallback(async (itemId: string, settings: { alertThreshold?: number; alertEnabled: boolean; unit?: string }) => {
+        const currentInventory = menuItems.find(item => item.id === itemId)?.inventory || {};
+        const updatedInventory = {
+            ...currentInventory,
+            ...settings,
+            alertThreshold: settings.alertThreshold ?? currentInventory.alertThreshold ?? 5,
+            quantity: currentInventory.quantity ?? 0,
+            unit: settings.unit ?? currentInventory.unit ?? 'units'
+        };
+
+        const { error } = await supabase
+            .from('menu_items')
+            .update({ inventory: updatedInventory })
+            .eq('id', itemId);
+
+        if (error) { Alert.alert('Error', `Failed to update inventory settings: ${error.message}`); return; }
+
+        setMenuItems(prevItems => prevItems.map(item => item.id === itemId ? { ...item, inventory: updatedInventory } : item));
+    }, [menuItems]);
+
+    const getLowStockItems = useCallback((): MenuItem[] => {
+        return menuItems.filter(item => {
+            if (!item.inventory || !item.inventory.alertEnabled) return false;
+            return item.inventory.quantity <= (item.inventory.alertThreshold || 0);
+        });
+    }, [menuItems]);
+
+    // SUB USERS
+    const addSubUser = useCallback(async (subUser: Omit<SubUser, 'id' | 'createdAt'>) => {
+        const { data: newUser, error } = await supabase
+            .from('sub_users')
+            .insert([{ ...subUser, created_at: Date.now() }])
+            .select()
+            .single();
+
+        if (error) { Alert.alert('Error', `Failed to add user: ${error.message}`); return; }
+        setSubUsers(prevUsers => [...prevUsers, newUser as SubUser]);
+    }, []);
+
+    const updateSubUser = useCallback(async (id: string, updates: Partial<SubUser>) => {
+        const { error } = await supabase.from('sub_users').update(updates).eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to update user: ${error.message}`); return; }
+        setSubUsers(prevUsers => prevUsers.map(user => user.id === id ? { ...user, ...updates } : user));
+    }, []);
+
+    const deleteSubUser = useCallback(async (id: string) => {
+        const { error } = await supabase.from('sub_users').delete().eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to delete user: ${error.message}`); return; }
+        setSubUsers(prevUsers => prevUsers.filter(user => user.id !== id));
+    }, []);
+
+    // STORE SETTINGS
+    const updateStoreSettings = useCallback(async (updates: Partial<StoreSettings>) => {
+        if (updates.storeDescription !== undefined) {
+            const { error } = await supabase
+                .from('store_details')
+                .update({ store_description: updates.storeDescription })
+                .eq('id', 1);
+
+            if (error) { Alert.alert('Error', `Failed to update description: ${error.message}`); }
+        }
+        setStoreSettings(prevSettings => ({ ...prevSettings, ...updates }));
+    }, []);
+
+    const addSocialMediaLink = useCallback(async (link: Omit<SocialMediaLink, 'id'>) => {
+        const { data: newLink, error } = await supabase.from('social_media').insert([link]).select().single();
+        if (error) { Alert.alert('Error', `Failed to add link: ${error.message}`); return; }
+        setStoreSettings(prevSettings => ({ ...prevSettings, socialMediaLinks: [...prevSettings.socialMediaLinks, newLink as SocialMediaLink] }));
+    }, []);
+
+    const updateSocialMediaLink = useCallback(async (id: string, updates: Partial<SocialMediaLink>) => {
+        const { error } = await supabase.from('social_media').update(updates).eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to update link: ${error.message}`); return; }
+        setStoreSettings(prevSettings => ({ ...prevSettings,
+            socialMediaLinks: prevSettings.socialMediaLinks.map(link => link.id === id ? { ...link, ...updates } : link)
+        }));
+    }, []);
+
+    const deleteSocialMediaLink = useCallback(async (id: string) => {
+        const { error } = await supabase.from('social_media').delete().eq('id', id);
+        if (error) { Alert.alert('Error', `Failed to delete link: ${error.message}`); return; }
+        setStoreSettings(prevSettings => ({ ...prevSettings,
+            socialMediaLinks: prevSettings.socialMediaLinks.filter(link => link.id !== id)
+        }));
+    }, []);
+
+    const updateOpeningHours = useCallback(async (hours: OpeningHours[]) => {
+        // Clear all existing hours and insert the new array
+        const { error: deleteError } = await supabase.from('opening_hours').delete().neq('day', '');
+        if (deleteError) { Alert.alert('Error', `Failed to clear old hours: ${deleteError.message}`); return; }
+
+        const { error: insertError } = await supabase.from('opening_hours').insert(hours);
+        if (insertError) { Alert.alert('Error', `Failed to update hours: ${insertError.message}`); return; }
+
+        setStoreSettings(prevSettings => ({ ...prevSettings, openingHours: hours }));
+    }, []);
+
+    const getOrderById = useCallback((orderId: string): Order | undefined => {
+        return orders.find(order => order.id === orderId);
+    }, [orders]);
+
+
+    return useMemo(() => ({
+        menuItems, categories, orders, subUsers, storeSettings, currentUser,
+        addMenuItem, updateMenuItem, deleteMenuItem, addCategory, updateCategory, deleteCategory,
+        addOrder, getOrderById, updateOrderStatus, deleteOrder, clearPaidOrders,
+        updateInventory, updateInventorySettings, getLowStockItems,
+        addSubUser, updateSubUser, deleteSubUser,
+        updateStoreSettings, addSocialMediaLink, updateSocialMediaLink, deleteSocialMediaLink, updateOpeningHours,
+        isLoading, isAuthenticated, login, logout
+    }), [
+        menuItems, categories, orders, subUsers, storeSettings, currentUser,
+        addMenuItem, updateMenuItem, deleteMenuItem, addCategory, updateCategory, deleteCategory,
+        addOrder, getOrderById, updateOrderStatus, deleteOrder, clearPaidOrders,
+        updateInventory, updateInventorySettings, getLowStockItems,
+        addSubUser, updateSubUser, deleteSubUser,
+        updateStoreSettings, addSocialMediaLink, updateSocialMediaLink, deleteSocialMediaLink, updateOpeningHours,
+        isLoading, isAuthenticated, login, logout
+    ]);
 });
